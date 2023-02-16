@@ -1,0 +1,14 @@
+Description: Allows the SIP program to use Linux commands, HTTP commands, Shelly devices
+Copyright 2022
+Author: Pedro Santos
+Email:
+License: GNU GPL 3.0
+
+Requirements:
+
+##### List all plugin files below preceded by a blank line [file_name.ext path] relative to SIP directory #####
+
+tank_manager.py plugins
+tank_manager.html templates
+tank_manager.json data (generated)
+tank_manager.manifest plugins/manifests

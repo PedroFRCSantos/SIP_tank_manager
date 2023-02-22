@@ -1,11 +1,137 @@
-$def with(commandsAdv)
+$def with(tankManager, addTank, listOfPumps, dbIsAvailable)
 
 $var title: $_(u'SIP tank control')
 $var page: tank_manager
 
+<script>
+    // Initialize behaviors
+    jQuery(document).ready(function () {
+		jQuery("button#cSubmit").click(function () {
+			jQuery("#tanksaveset").submit();
+        });
+    });
+	jQuery(document).ready(function () {
+		jQuery("button#addNewTank").click(function () {
+			window.location = "./tankmaset?AddTank=1";
+        });
+	});
+</script>
+
 <div id="plugin">
 	<div>
-		<p>This plugin can be used to ....</p>
-		<p>Activate motors if needed, ...</p>
+		$if addTank == 0:
+			<button id="addNewTank" class="submit"><b>Add More pump</b></button>
+			<br /><br />
+
+		<form id="tanksaveset" name="tanksaveset" action="/tanksaveset" method="get">
+			$if dbIsAvailable:
+				Use logs in DB: <input type="checkbox" size="50" value="pumpUseDB" id="pumpUseDB" name="pumpUseDB" ${"checked" if tankManager['Log2DB'] == 1 else "" }><br />
+
+			<br />
+
+			$for tankId in range(len(tankManager['TankName']) + addTank):
+				$if tankId < len(tankManager['TankName']):
+					<a href="./tankdelete?PumpId=${tankId}">DELETE</a>
+				<br /><br />
+				Tank name:<br />
+				$if tankId < len(tankManager['TankName']):
+					<input type="text" size="50" value="${tankManager['TankName'][tankId]}" id="tankName${tankId}" name="tankName${tankId}">
+				$else:
+					<input type="text" size="50" value="" id="tankName${tankId}" name="tankName${tankId}">
+				
+				<br /><br />
+
+				Device IP Top:<br />
+				$if tankId < len(tankManager['TankName']):
+					<input type="text" size="50" value="${tankManager['TankIpTop'][tankId]}" id="deviceIPTop${tankId}" name="deviceIPTop${tankId}"><br />
+				$else:
+					<input type="text" size="50" value="" id="deviceIPTop${tankId}" name="deviceIPTop${tankId}"><br />
+				Device Type:
+				<select name="tankDeviceTop${tankId}" id="tankDeviceTop${tankId}">
+					<option value="">None</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceTopType'][tankId] == 'shelly1':
+						<option value="shelly1" selected="selected">Shelly 1</option>
+					$else:
+						<option value="shelly1">Shelly 1</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceTopType'][tankId] == 'shelly2':
+						<option value="shelly2" selected="selected">Shelly 2</option>
+					$else:
+						<option value="shelly2">Shelly 2</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceTopType'][tankId] == 'shelly2_1':
+						<option value="shelly2_1" selected="selected">Shelly 2, only channel 1</option>
+					$else:
+						<option value="shelly2_1">Shelly 2, only channel 1</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceTopType'][tankId] == 'shelly2_2':
+						<option value="shelly2_2" selected="selected">Shelly 2, only channel 2</option>
+					$else:
+						<option value="shelly2_2">Shelly 2, only channel 2</option>
+				</select>
+
+				<br /><br />
+				Device IP midium:<br />
+				$if tankId < len(tankManager['TankName']):
+					<input type="text" size="50" value="${tankManager['TankIpMid'][tankId]}" id="deviceIPMid${tankId}" name="deviceIPMid${tankId}"><br />
+				$else:
+					<input type="text" size="50" value="" id="deviceIPMid${tankId}" name="deviceIPMid${tankId}"><br />
+				Device Type:
+				<select name="tankDeviceMid${tankId}" id="tankDeviceMid${tankId}">
+					<option value="">None</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceMidType'][tankId] == 'shelly1':
+						<option value="shelly1" selected="selected">Shelly 1</option>
+					$else:
+						<option value="shelly1">Shelly 1</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceMidType'][tankId] == 'shelly2':
+						<option value="shelly2" selected="selected">Shelly 2</option>
+					$else:
+						<option value="shelly2">Shelly 2</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceMidType'][tankId] == 'shelly2_1':
+						<option value="shelly2_1" selected="selected">Shelly 2, only channel 1</option>
+					$else:
+						<option value="shelly2_1">Shelly 2, only channel 1</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceMidType'][tankId] == 'shelly2_2':
+						<option value="shelly2_2" selected="selected">Shelly 2, only channel 2</option>
+					$else:
+						<option value="shelly2_2">Shelly 2, only channel 2</option>
+				</select>
+				<br /><br />
+				Device IP SOS:<br />
+				$if tankId < len(tankManager['TankName']):
+					<input type="text" size="50" value="${tankManager['TankIpSOS'][tankId]}" id="deviceIPSOS${tankId}" name="deviceIPSOS${tankId}"><br />
+				$else:
+					<input type="text" size="50" value="" id="deviceIPSOS${tankId}" name="deviceIPSOS${tankId}"><br />
+				Device Type:
+				<select name="tankDeviceSOS${tankId}" id="tankDeviceSOS${tankId}">
+					<option value="">None</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceSOSType'][tankId] == 'shelly1':
+						<option value="shelly1" selected="selected">Shelly 1</option>
+					$else:
+						<option value="shelly1">Shelly 1</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceSOSType'][tankId] == 'shelly2':
+						<option value="shelly2" selected="selected">Shelly 2</option>
+					$else:
+						<option value="shelly2">Shelly 2</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceSOSType'][tankId] == 'shelly2_1':
+						<option value="shelly2_1" selected="selected">Shelly 2, only channel 1</option>
+					$else:
+						<option value="shelly2_1">Shelly 2, only channel 1</option>
+					$if tankId < len(tankManager['TankName']) and tankManager['TankDeviceSOSType'][tankId] == 'shelly2_2':
+						<option value="shelly2_2" selected="selected">Shelly 2, only channel 2</option>
+					$else:
+						<option value="shelly2_2">Shelly 2, only channel 2</option>
+				</select>
+				<br /><br />
+
+				List of pumps available, select pumps needed to fill the thank:<br />
+				$for pumpId in range(len(listOfPumps['PumpName'])):
+					<input type="checkbox" size="50" value="pumpSelectFrom${tankId}" id="pumpSelectFrom${tankId}" name="pumpSelectFrom${tankId}" ${"checked" if pumpId in tankManager['PumpNeedOn'] else ""}>
+					${listOfPumps['PumpName'][pumpId]}
+		</form>
+	</div>
+
+	<br />
+
+	<div class="controls">
+		<button id="cSubmit" class="submit"><b>$_(u'Submit')</b></button>
+		<button id="cCancel" class="cancel danger">$_(u'Cancel')</button>
 	</div>
 </div>

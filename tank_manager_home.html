@@ -1,0 +1,21 @@
+$def with(commandsAdv)
+
+$var title: $_(u'SIP tank control')
+$var page: tank_manager
+
+<div id="plugin">
+	<div>
+		<p>This plugin can be used to ....</p>
+		<p>Activate motors if needed, ...</p>
+
+		<button id="addNewPump" class="submit"><b>Add More pump</b></button>
+
+		<form id="tankdef" name="tankdef" action="/tankdefcha" method="get">
+		</form>
+	</div>
+
+	<div class="controls">
+		<button id="cSubmit" class="submit"><b>$_(u'Submit')</b></button>
+		<button id="cCancel" class="cancel danger">$_(u'Cancel')</button>
+	</div>
+</div>

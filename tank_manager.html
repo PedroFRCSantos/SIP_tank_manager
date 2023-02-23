@@ -21,17 +21,19 @@ $var page: tank_manager
 	<div>
 		$if addTank == 0:
 			<button id="addNewTank" class="submit"><b>Add More pump</b></button>
-			<br /><br />
+
+		<br /><br />
 
 		<form id="tanksaveset" name="tanksaveset" action="/tanksaveset" method="get">
 			$if dbIsAvailable:
 				Use logs in DB: <input type="checkbox" size="50" value="pumpUseDB" id="pumpUseDB" name="pumpUseDB" ${"checked" if tankManager['Log2DB'] == 1 else "" }><br />
 
-			<br />
-
 			$for tankId in range(len(tankManager['TankName']) + addTank):
+				<br /><br />
 				$if tankId < len(tankManager['TankName']):
 					<a href="./tankdelete?PumpId=${tankId}">DELETE</a>
+				$else:
+					<a href="./tankmaset">DELETE</a>
 				<br /><br />
 				Tank name:<br />
 				$if tankId < len(tankManager['TankName']):
@@ -39,6 +41,14 @@ $var page: tank_manager
 				$else:
 					<input type="text" size="50" value="" id="tankName${tankId}" name="tankName${tankId}">
 				
+				<br /><br />
+
+				Tank save energy:
+				$if tankId < len(tankManager['TankName']):
+					<input type="checkbox" size="50" value="tankSaveEnergy${tankId}" id="tankSaveEnergy${tankId}" name="tankSaveEnergy${tankId}" ${"checked" if tankManager['TankSaveEnergy'][tankId] else ""}>
+				$else:
+					<input type="checkbox" size="50" value="tankSaveEnergy${tankId}" id="tankSaveEnergy${tankId}" name="tankSaveEnergy${tankId}">
+
 				<br /><br />
 
 				Device IP Top:<br />
@@ -123,8 +133,31 @@ $var page: tank_manager
 
 				List of pumps available, select pumps needed to fill the thank:<br />
 				$for pumpId in range(len(listOfPumps['PumpName'])):
-					<input type="checkbox" size="50" value="pumpSelectFrom${tankId}" id="pumpSelectFrom${tankId}" name="pumpSelectFrom${tankId}" ${"checked" if pumpId in tankManager['PumpNeedOn'] else ""}>
+					$if tankId < len(tankManager['TankName']):
+						<input type="checkbox" size="50" value="${pumpId}" id="pumpSelect${tankId}Use${pumpId}" name="pumpSelect${tankId}Use${pumpId}" ${"checked" if pumpId in tankManager['PumpNeedOn'][tankId] else ""}>
+					$else:
+						<input type="checkbox" size="50" value="${pumpId}" id="pumpSelect${tankId}Use${pumpId}" name="pumpSelect${tankId}Use${pumpId}">
 					${listOfPumps['PumpName'][pumpId]}
+
+				<br /><br />
+				List Of valves On:<br /><br />
+				$for bid in range(0,gv.sd['nbrd']):
+					$for s in range(0,8):
+						$ sid = bid*8 + s;
+						$if tankId < len(tankManager['TankName']):
+							<input type="checkbox" id="valvesNeedTank${tankId}ON${sid}" name="valvesNeedTank${tankId}ON${sid}" value="valvesNeedTank${tankId}ON${sid}" ${"checked" if sid in tankManager['PumpValves2PositionOn'][tankId] else ""}>${gv.snames[sid]}
+						$else:
+							<input type="checkbox" id="valvesNeedTank${tankId}ON${sid}" name="valvesNeedTank${tankId}ON${sid}" value="valvesNeedTank${tankId}ON${sid}">${gv.snames[sid]}
+
+				<br /><br />
+				List of valves Off:<br /><br />
+				$for bid in range(0,gv.sd['nbrd']):
+					$for s in range(0,8):
+						$ sid = bid*8 + s;
+						$if tankId < len(tankManager['TankName']):
+							<input type="checkbox" id="valvesNeedTank${tankId}Off${sid}" name="valvesNeedTank${tankId}Off${sid}" value="valvesNeedTank${tankId}Off${sid}" ${"checked" if sid in tankManager['PumpValves2PositionOff'][tankId] else ""}>${gv.snames[sid]}
+						$else:
+							<input type="checkbox" id="valvesNeedTank${tankId}Off${sid}" name="valvesNeedTank${tankId}Off${sid}" value="valvesNeedTank${tankId}Off${sid}">${gv.snames[sid]}
 		</form>
 	</div>
 

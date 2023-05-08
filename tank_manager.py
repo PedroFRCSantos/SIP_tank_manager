@@ -174,7 +174,7 @@ def askAllTankState():
     tackmanagerLock.release()
 
 def runTreadTank():
-    global isTackRunning, tankManager, tankStateTank
+    global isTackRunning, tankManager, tankStateTank, tankActivityStatus
 
     lastTime = datetime.now()
 
@@ -193,9 +193,9 @@ def runTreadTank():
         if len(tankActivityStatus) > len(localTankStatus):
             tankActivityStatus = tankActivityStatus[:len(localTankStatus)]
         elif len(tankActivityStatus) < len(localTankStatus):
-            numElm2Add = len(tankActivityStatus) - len(localTankStatus)
+            numElm2Add = len(localTankStatus) - len(tankActivityStatus)
             for i in range(numElm2Add):
-                tankActivityStatus.append(True)
+                tankActivityStatus.append(False)
 
         # if any state change, take actions
         for i in range(len(localTankThread[u"TankName"])):
@@ -243,44 +243,45 @@ def runTreadTank():
                     tackmanagerLock.release()
 
                     if tankCanStart:
-                        # Start to stop irrigation if any program is running
-                        sendLocalHTTPRequest("cv", "?pw=opendoor&mm=1")
+                        if not tankActivityStatus[i]:
+                            # Start to stop irrigation if any program is running
+                            sendLocalHTTPRequest("cv", "?pw=opendoor&mm=1")
 
-                        # manual set position of valves
-                        # ON valves
-                        for valveId in localTankThread[u"PumpValves2PositionOn"][i]:
-                            sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=1")
-                        # OFF valves
-                        for valveId in localTankThread[u"PumpValves2PositionOff"][i]:
-                            sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=0")
+                            # manual set position of valves
+                            # ON valves
+                            for valveId in localTankThread[u"PumpValves2PositionOn"][i]:
+                                sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=1")
+                            # OFF valves
+                            for valveId in localTankThread[u"PumpValves2PositionOff"][i]:
+                                sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=0")
 
-                        # manual start all pumps, if plug-in exits
-                        for pumpId in localTankThread[u"PumpNeedOn"][i]:
-                            sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=on")
+                            # manual start all pumps, if plug-in exits
+                            for pumpId in localTankThread[u"PumpNeedOn"][i]:
+                                sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=on")
 
-                        # inform energy manger using energy with permition
-                        # TODO
+                            # inform energy manger using energy with permition
+                            # TODO
 
                         tankActivityStatus[i] = True
 
                         listOfThanksWaiting.remove(i)
                         listOfTankNonPriorityWorking.append(i)
-            elif localTankStatus[i][2] != None and not localTankStatus[i][2] and i not in listOfTanksSOS: # SOS is not fill
+            if localTankStatus[i][2] != None and not localTankStatus[i][2] and i not in listOfTanksSOS and not tankActivityStatus[i]: # SOS is not fill
                 # SOS turn on tank, in the future add fail save
                 # Start to stop all irrigation program
                 sendLocalHTTPRequest("cv", "?pw=opendoor&mm=1")
 
                 # fix valves position
                 # ON valves
-                for valveId in localTankThread[u"PumpValves2PositionOn"]:
+                for valveId in localTankThread[u"PumpValves2PositionOn"][i]:
                     sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=1")
                 # OFF valves
-                for valveId in localTankThread[u"PumpValves2PositionOff"]:
+                for valveId in localTankThread[u"PumpValves2PositionOff"][i]:
                     sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=0")
 
                 # set other valves to off
                 for valveId in range(len(gv.srvals)):
-                    if valveId + 1 not in localTankThread[u"PumpValves2PositionOn"] and valveId + 1 not in localTankThread[u"PumpValves2PositionOff"]:
+                    if valveId + 1 not in localTankThread[u"PumpValves2PositionOn"][i] and valveId + 1 not in localTankThread[u"PumpValves2PositionOff"][i]:
                         sendLocalHTTPRequest("sn", "?sid="+ str(valveId + 1) + "&set_to=0")
 
                 # start pumps if needed and exists plugin
@@ -295,27 +296,46 @@ def runTreadTank():
                     if k >= 0 and k < len(listOfPumps['PumpPower']):
                         totalPower = totalPower + float(listOfPumps['PumpPower'][k])
 
-                argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&EnergyPower="+ str(totalPower)
+                argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&EnergyPower="+ str(totalPower) +"&MandatoryWork"
                 sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
 
                 tankActivityStatus[i] = True
 
                 listOfTanksSOS.append(i)
-            elif localTankStatus[i][2] != None and localTankStatus[i][2] and i in listOfTanksSOS and i not in listOfTankNonPriorityWorking: # SOS finish but pumps is not allow to continue
-                # desable all pups pump
-                for pumpId in localTankThread[u"PumpNeedOn"]:
-                    sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
+            elif localTankStatus[i][2] != None and localTankStatus[i][2] and i in listOfTanksSOS: # SOS finish but pumps can be allow to continue
+                tankCanContinue = False
 
-                tankActivityStatus[i] = True
+                if i not in listOfTankNonPriorityWorking:
+                    tackmanagerLock.acquire()
+                    for l in range(len(tankPermitionEnergy)):
+                        if tankPermitionEnergy[l][0] == localTankThread[u"TankRef"][i] and tankPermitionEnergy[l][1]:
+                            tankCanContinue = True
+                            id2Delete = l
+                    if id2Delete >= 0:
+                        del tankPermitionEnergy[id2Delete]
+                    tackmanagerLock.release()
+                
+                if not tankCanContinue:
+                    # desable all pups pump
+                    for pumpId in localTankThread[u"PumpNeedOn"][i]:
+                        sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=off")
+                        sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
 
-                # enable irrigation to auto
-                sendLocalHTTPRequest("cv", "?pw=opendoor&mm=0")
+                    tankActivityStatus[i] = False
+
+                    # close all valves
+                    for valveId in range(len(gv.srvals)):
+                        sendLocalHTTPRequest("sn", "?sid="+ str(valveId + 1) + "&set_to=0")
+
+                    # enable irrigation to auto
+                    sendLocalHTTPRequest("cv", "?pw=opendoor&mm=0")
 
                 # remove from SOS list
                 listOfTanksSOS.remove(i)
             elif localTankStatus[i][0] != None and localTankStatus[i][0] and i in listOfTankNonPriorityWorking: # Top is fill, need to stop pump
                 # desable all pups pump
-                for pumpId in localTankThread[u"PumpNeedOn"]:
+                for pumpId in localTankThread[u"PumpNeedOn"][i]:
+                    sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=off")
                     sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
 
                 # disable all valves to off
@@ -334,6 +354,7 @@ def runTreadTank():
 
                 # remove from non prioruty list
                 listOfTankNonPriorityWorking.remove(i)
+
         # every 30 seconds force state if needed and check if valves are only
         nowTime = datetime.now()
         diffTime = nowTime - lastTime

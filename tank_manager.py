@@ -6,6 +6,7 @@ from curses.ascii import isdigit
 
 # standard library imports
 import json
+from pickle import NONE
 from threading import Thread, Lock
 import copy
 from datetime import datetime
@@ -39,6 +40,8 @@ urls.extend(
         u"/tankman", u"plugins.tank_manager.tank_home",
         u"/tankmaset", u"plugins.tank_manager.tank_settings",
         u"/tanksaveset", u"plugins.tank_manager.tank_save_settings",
+        u"/tankDefJSon", u"plugins.tank_manager.tank_definitions_json",
+        u"/tankstatusjson", u"plugins.tank_manager.check_tank_status_json",
         u"/tankdelete", u"plugins.tank_manager.tank_delete_settings",
         u"/tankisonline", u"plugins.tank_manager.check_tank_is_online",
         u"/tankstatus", u"plugins.tank_manager.check_tank_status",
@@ -49,6 +52,8 @@ urls.extend(
 
 # Add this plugin to the plugins menu
 gv.plugin_menu.append([u"Tank Manager", u"/tankman"])
+
+tankActivityStatus = [] # True - is pumping wather to tank
 
 tankManager = {}
 tankStateTank = [] # List of state of tanks, shared variable
@@ -97,19 +102,22 @@ def askAllTankState():
     listOfResults = []
     for i in range(len(localTankThread[u"TankName"])):
         if len(localTankThread[u"TankIpTop"][i]) > 0:
-            resposeIsOkTop, isTurnOnTop = tankIsOnLine(localTankThread[u"TankIpTop"][i], localTankThread[u"TankDeviceTopType"][i])
+            resposeIsOkTop, isTurnOnTop = tankIsOnLine(localTankThread[u"TankDeviceTopType"][i], localTankThread[u"TankIpTop"][i])
         else:
-            resposeIsOkTop, isTurnOnTop = None
+            resposeIsOkTop = None
+            isTurnOnTop = None
 
         if len(localTankThread[u"TankIpMid"][i]) > 0:
-            resposeIsOkMid, isTurnOnMid = tankIsOnLine(localTankThread[u"TankIpMid"][i], localTankThread[u"TankDeviceMidType"][i])
+            resposeIsOkMid, isTurnOnMid = tankIsOnLine(localTankThread[u"TankDeviceMidType"][i], localTankThread[u"TankIpMid"][i])
         else:
-            resposeIsOkMid, isTurnOnMid = None
+            resposeIsOkMid = None
+            isTurnOnMid = None
 
         if len(localTankThread[u"TankIpSOS"][i]) > 0:
-            resposeIsOkSOS, isTurnOnSOS = tankIsOnLine(localTankThread[u"TankIpSOS"][i], localTankThread[u"TankDeviceSOSType"][i])
+            resposeIsOkSOS, isTurnOnSOS = tankIsOnLine(localTankThread[u"TankDeviceSOSType"][i], localTankThread[u"TankIpSOS"][i])
         else:
-            resposeIsOkSOS, isTurnOnSOS = None
+            resposeIsOkSOS = None
+            isTurnOnSOS = None
 
         listTMPdata = {}
         listTMPdata['IsOk'] = [resposeIsOkTop, resposeIsOkMid, resposeIsOkSOS]
@@ -166,7 +174,7 @@ def askAllTankState():
     tackmanagerLock.release()
 
 def runTreadTank():
-    global isTackRunning
+    global isTackRunning, tankManager, tankStateTank
 
     lastTime = datetime.now()
 
@@ -182,9 +190,16 @@ def runTreadTank():
         localTankStatus = copy.deepcopy(tankStateTank)
         tackmanagerLock.release()
 
+        if len(tankActivityStatus) > len(localTankStatus):
+            tankActivityStatus = tankActivityStatus[:len(localTankStatus)]
+        elif len(tankActivityStatus) < len(localTankStatus):
+            numElm2Add = len(tankActivityStatus) - len(localTankStatus)
+            for i in range(numElm2Add):
+                tankActivityStatus.append(True)
+
         # if any state change, take actions
         for i in range(len(localTankThread[u"TankName"])):
-            if not localTankStatus[i][0]: # Top is not fill
+            if localTankStatus[i][0] != None and not localTankStatus[i][0]: # Top is not fill and any program is running
                 # check if ask for permition non priory to fill the tank
                 if i not in listOfTanksSOS and i not in listOfThanksWaiting and i not in listOfTankNonPriorityWorking:
                     listOfThanksWaiting.append(i)
@@ -192,13 +207,24 @@ def runTreadTank():
                     # get definition of pups to estimate power
                     listOfPumps = getListOfPupms()
                     totalPower = 0.0
-                    for k in range(len(localTankThread[u"PumpNeedOn"])):
-                        if k < len(listOfPumps['PumpPower']):
-                            totalPower = totalPower + float(listOfPumps['PumpPower'][0])
+                    minumWorkingTime = 0.0
+                    for k in localTankThread[u"PumpNeedOn"][i]:
+                        if k >= 0 and k < len(listOfPumps['PumpPower']):
+                            totalPower = totalPower + float(listOfPumps['PumpPower'][k])
+                            spliCurrWorkTime = listOfPumps['PumpMinWorkingTime'][k].split(':')
+
+                            currentMinWorkTime = 0.0
+                            if len(spliCurrWorkTime) == 2: # minutes:seconds
+                                currentMinWorkTime = float(spliCurrWorkTime[0]) / 60.0 + float(spliCurrWorkTime[1]) / 60.0 / 60.0
+                            elif len(spliCurrWorkTime) == 3: # hour:minute:seconds
+                                currentMinWorkTime = float(spliCurrWorkTime[0]) + float(spliCurrWorkTime[1]) / 60.0 + float(spliCurrWorkTime[2]) / 60.0 / 60.0
+
+                            if currentMinWorkTime > minumWorkingTime:
+                                minumWorkingTime = currentMinWorkTime
 
                     # send using http request permition to turn on to energy manager
-                    argumentEnergy = "?ExtentionName=tankmanager&LinkConn=tanksendpermition&MinWorkingTime=0.25&EnergyPower="+ str(totalPower)
-                    argumentEnergy = argumentEnergy + "&ExpectedWorkingTime=0.25&AvoidIrrigationProgram=yes&HoursCanWait=0"
+                    argumentEnergy = "?ExtentionName=tankmanager&LinkConn=tanksendpermition&DeviceRef="+ localTankThread[u"TankRef"][i] +"&MinWorkingTime="+ str(minumWorkingTime) +"&EnergyPower="+ str(totalPower)
+                    argumentEnergy = argumentEnergy + "&ExpectedWorkingTime=0.25&AvoidIrrigationProgram=yes&HoursCanWait=0&Priority=1"
 
                     sendLocalHTTPRequest("energy-manager-ask-consuption", argumentEnergy)
                 elif i in listOfThanksWaiting:
@@ -209,7 +235,7 @@ def runTreadTank():
                     # if energy manager is active, check when permion was given
                     tackmanagerLock.acquire()
                     for l in range(len(tankPermitionEnergy)):
-                        if tankPermitionEnergy[l][0] == tankManager[u"TankRef"] and tankPermitionEnergy[l][1] == 'on':
+                        if tankPermitionEnergy[l][0] == localTankThread[u"TankRef"][i] and tankPermitionEnergy[l][1]:
                             tankCanStart = True
                             id2Delete = l
                     if id2Delete >= 0:
@@ -222,19 +248,24 @@ def runTreadTank():
 
                         # manual set position of valves
                         # ON valves
-                        for valveId in localTankThread[u"PumpValves2PositionOn"]:
+                        for valveId in localTankThread[u"PumpValves2PositionOn"][i]:
                             sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=1")
                         # OFF valves
-                        for valveId in localTankThread[u"PumpValves2PositionOff"]:
+                        for valveId in localTankThread[u"PumpValves2PositionOff"][i]:
                             sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=0")
 
                         # manual start all pumps, if plug-in exits
-                        for pumpId in localTankThread[u"PumpNeedOn"]:
+                        for pumpId in localTankThread[u"PumpNeedOn"][i]:
                             sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=on")
+
+                        # inform energy manger using energy with permition
+                        # TODO
+
+                        tankActivityStatus[i] = True
 
                         listOfThanksWaiting.remove(i)
                         listOfTankNonPriorityWorking.append(i)
-            elif not localTankStatus[i][2] and i not in listOfTanksSOS: # SOS is not fill
+            elif localTankStatus[i][2] != None and not localTankStatus[i][2] and i not in listOfTanksSOS: # SOS is not fill
                 # SOS turn on tank, in the future add fail save
                 # Start to stop all irrigation program
                 sendLocalHTTPRequest("cv", "?pw=opendoor&mm=1")
@@ -247,28 +278,59 @@ def runTreadTank():
                 for valveId in localTankThread[u"PumpValves2PositionOff"]:
                     sendLocalHTTPRequest("sn", "?sid="+ str(valveId) + "&set_to=0")
 
+                # set other valves to off
+                for valveId in range(len(gv.srvals)):
+                    if valveId + 1 not in localTankThread[u"PumpValves2PositionOn"] and valveId + 1 not in localTankThread[u"PumpValves2PositionOff"]:
+                        sendLocalHTTPRequest("sn", "?sid="+ str(valveId + 1) + "&set_to=0")
+
                 # start pumps if needed and exists plugin
                 for pumpId in localTankThread[u"PumpNeedOn"]:
                     sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=on")
 
+                # Inform energy manager, device start in emergy mode, register to avoid this situation
+                # get definition of pups to estimate power
+                listOfPumps = getListOfPupms()
+                totalPower = 0.0
+                for k in localTankThread[u"PumpNeedOn"][i]:
+                    if k >= 0 and k < len(listOfPumps['PumpPower']):
+                        totalPower = totalPower + float(listOfPumps['PumpPower'][k])
+
+                argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&EnergyPower="+ str(totalPower)
+                sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
+
+                tankActivityStatus[i] = True
+
                 listOfTanksSOS.append(i)
-            elif localTankStatus[i][2] and i in listOfTanksSOS and i not in listOfTankNonPriorityWorking: # SOS finish but pumps is not allow to continue
+            elif localTankStatus[i][2] != None and localTankStatus[i][2] and i in listOfTanksSOS and i not in listOfTankNonPriorityWorking: # SOS finish but pumps is not allow to continue
                 # desable all pups pump
                 for pumpId in localTankThread[u"PumpNeedOn"]:
                     sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
+
+                tankActivityStatus[i] = True
 
                 # enable irrigation to auto
                 sendLocalHTTPRequest("cv", "?pw=opendoor&mm=0")
 
                 # remove from SOS list
                 listOfTanksSOS.remove(i)
-            elif localTankStatus[i][0] and i in listOfTankNonPriorityWorking: # Top is fill, need to stop pump
+            elif localTankStatus[i][0] != None and localTankStatus[i][0] and i in listOfTankNonPriorityWorking: # Top is fill, need to stop pump
                 # desable all pups pump
                 for pumpId in localTankThread[u"PumpNeedOn"]:
                     sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
 
+                # disable all valves to off
+                for valveId in range(len(gv.srvals)):
+                    sendLocalHTTPRequest("sn", "?sid="+ str(valveId + 1) + "&set_to=0")
+
                 # enable irrigation to auto
                 sendLocalHTTPRequest("cv", "?pw=opendoor&mm=0")
+
+                tankActivityStatus[i] = False
+
+                # save finish know energy to DB
+
+                # inform energy manager that don´t need energy any more
+                sendLocalHTTPRequest("energy-manager-ask-consuption", "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&RemovePermition")
 
                 # remove from non prioruty list
                 listOfTankNonPriorityWorking.remove(i)
@@ -283,7 +345,7 @@ def runTreadTank():
             askAllTankState()
 
 def load_commands():
-    global tankManager, threadMainTank
+    global tankManager, threadMainTank, tankStateTank
 
     tackmanagerLock.acquire()
     try:
@@ -291,6 +353,12 @@ def load_commands():
             tankManager = json.load(f)  # Read the commands from file
     except IOError:  #  If file does not exist create file with defaults.
         tankManager = {"Log2DB": True, u"PumpValves2PositionOn": [], u"PumpValves2PositionOff": [], u"TankName": [], u"TankRef": [], u"TankSaveEnergy": [], u"TankIpTop": [], u"TankDeviceTopType": [], u"TankIpMid": [], u"TankDeviceMidType": [], u"TankIpSOS": [], u"TankDeviceSOSType": [], u"PumpNeedOn": [], u"URLTankCode": []}
+
+
+    # set none to initial tank state
+    tankStateTank = []
+    for i in range(len(tankManager["TankName"])):
+        tankStateTank.append([None, None, None])
     tackmanagerLock.release()
 
     threadMain = Thread(target = runTreadTank)
@@ -322,7 +390,7 @@ class tank_save_settings(ProtectedPage):
     """Valve status"""
 
     def GET(self):
-        global tankManager, tackmanagerLock
+        global tankManager, tackmanagerLock, tankStateTank
 
         qdict = web.input()
 
@@ -336,6 +404,8 @@ class tank_save_settings(ProtectedPage):
                 numberOfTanks = numberOfTanks + 1
 
         localDefinitions[u"TankName"] = []
+        localDefinitions[u"URLTankCode"] = []
+        localDefinitions[u"TankRef"] = []
 
         localDefinitions[u"PumpValves2PositionOn"] = []
         localDefinitions[u"PumpValves2PositionOff"] = []
@@ -445,6 +515,27 @@ class tank_save_settings(ProtectedPage):
         tackmanagerLock.release()
 
         web.seeother(u"/tankmaset")
+
+class tank_definitions_json(ProtectedPage):
+    """Valve status"""
+
+    def GET(self):
+        global tankManager, tackmanagerLock
+
+        web.header(u"Access-Control-Allow-Origin", u"*")
+        web.header(u"Content-Type", u"application/json")
+
+        tackmanagerLock.acquire()
+        data2Return = json.dumps(tankManager)
+        tackmanagerLock.release()
+
+        return data2Return
+
+class check_tank_status_json(ProtectedPage):
+    """Valve status"""
+
+    def GET(self):
+        return "ok"
 
 class tank_delete_settings(ProtectedPage):
     """Valve status"""
@@ -578,13 +669,15 @@ class url_notification_tank_change():
 class tank_autorize_start_stop_non_priority():
     """Energy manager autorize to start/stop tank non priority"""
     def GET(self):
+        global tackmanagerLock, tankManager, tankPermitionEnergy
+
         qdict = web.input()
         if "DeviceRef" in qdict and "DevicePermition" in qdict and (qdict["DevicePermition"] == 'on' or qdict["DevicePermition"] == 'off'):
-            tankRef = qdict["TankRef"]
+            tankRef = qdict["DeviceRef"]
 
             tackmanagerLock.acquire()
             # Check if thank ref exists
-            if tankRef in tankManager["DeviceRef"]:
+            if tankRef in tankManager["TankRef"]:
                 isFound = False
 
                 for i in range(len(tankPermitionEnergy)):

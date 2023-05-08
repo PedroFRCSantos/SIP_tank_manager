@@ -30,7 +30,7 @@ def requestHTTP(commandURL):
 
 def tankIsOnLine(deviceType : str, pumpIP : str):
     resposeIsOk = -1
-    isTurnOn = False
+    isTurnOn = None
 
     if deviceType == 'shelly1' or deviceType == 'shelly2' or deviceType == 'shelly2_1' or deviceType == 'shelly2_2':
         commandURL = u"http://" + pumpIP + u"/status"
@@ -39,13 +39,9 @@ def tankIsOnLine(deviceType : str, pumpIP : str):
         resposeIsOk, response = requestHTTP(commandURL)
 
         if resposeIsOk == 0:
-            if deviceType == 'shelly1' or deviceType == 'shelly2_1':
+            if deviceType == 'shelly1' or deviceType == 'shelly2_1' or deviceType == 'shelly2':
                 isTurnOn = bool(response['relays'][0]['ison'])
-            elif deviceType == 'shelly2':
-                isTurnOn = []
-                isTurnOn.append(bool(response['relays'][0]['ison']))
-                isTurnOn.append(bool(response['relays'][1]['ison']))
-            else:
+            elif deviceType == 'shelly2_2':
                 isTurnOn = bool(response['relays'][1]['ison'])
     else:
         pass

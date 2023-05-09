@@ -285,7 +285,7 @@ def runTreadTank():
                         sendLocalHTTPRequest("sn", "?sid="+ str(valveId + 1) + "&set_to=0")
 
                 # start pumps if needed and exists plugin
-                for pumpId in localTankThread[u"PumpNeedOn"]:
+                for pumpId in localTankThread[u"PumpNeedOn"][i]:
                     sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=on")
 
                 # Inform energy manager, device start in emergy mode, register to avoid this situation

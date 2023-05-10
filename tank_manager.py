@@ -260,12 +260,45 @@ def runTreadTank():
                                 sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=on")
 
                             # inform energy manger using energy with permition
-                            # TODO
+                            argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&EnergyPower="+ str(totalPower) +"&TurnOffMinDateTime="+ datetime.now().strftime("%Y/%m/%d %H:%M:%S") +"&UrlStop=tanksendpermition"
+                            sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
 
                         tankActivityStatus[i] = True
 
                         listOfThanksWaiting.remove(i)
                         listOfTankNonPriorityWorking.append(i)
+                elif tankActivityStatus[i]: # if already puping wather, check if permition to continue
+                    tankCanStop = False
+
+                    # if energy manager is active, check when permion was given
+                    tackmanagerLock.acquire()
+                    for l in range(len(tankPermitionEnergy)):
+                        if tankPermitionEnergy[l][0] == localTankThread[u"TankRef"][i] and not tankPermitionEnergy[l][1]:
+                            tankCanStop = True
+                            id2Delete = l
+                    if id2Delete >= 0:
+                        del tankPermitionEnergy[id2Delete]
+                    tackmanagerLock.release()
+
+                    if tankCanStop:
+                        # manual start all pumps, if plug-in exits
+                        for pumpId in localTankThread[u"PumpNeedOn"][i]:
+                            sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=off")
+                            sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
+
+                        # disable all valves to off
+                        for valveId in range(len(gv.srvals)):
+                            sendLocalHTTPRequest("sn", "?sid="+ str(valveId + 1) + "&set_to=0")
+
+                        # enable irrigation to auto
+                        sendLocalHTTPRequest("cv", "?pw=opendoor&mm=0")
+
+                        tankActivityStatus[i] = False
+
+                        # inform energy manager, stop to using energy for this tank
+                        # TODO
+
+                        listOfTankNonPriorityWorking.remove(i)
             if localTankStatus[i][2] != None and not localTankStatus[i][2] and i not in listOfTanksSOS and not tankActivityStatus[i]: # SOS is not fill
                 # SOS turn on tank, in the future add fail save
                 # Start to stop all irrigation program
@@ -296,7 +329,7 @@ def runTreadTank():
                     if k >= 0 and k < len(listOfPumps['PumpPower']):
                         totalPower = totalPower + float(listOfPumps['PumpPower'][k])
 
-                argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&EnergyPower="+ str(totalPower) +"&MandatoryWork"
+                argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&EnergyPower="+ str(totalPower) +"&MandatoryWork&TurnOffMinDateTime=0&UrlStop=tanksendpermition"
                 sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
 
                 tankActivityStatus[i] = True
@@ -700,12 +733,16 @@ class tank_autorize_start_stop_non_priority():
             # Check if thank ref exists
             if tankRef in tankManager["TankRef"]:
                 isFound = False
+                foundId = -1
 
                 for i in range(len(tankPermitionEnergy)):
                     if tankPermitionEnergy[i][0] == tankRef:
                         tankPermitionEnergy[i][1] = qdict["DevicePermition"] == 'on'
                         isFound = True
+                        foundId = i
 
-                if not isFound:
+                if isFound:
+                    tankPermitionEnergy[foundId] = [tankRef, qdict["DevicePermition"] == 'on']
+                else:
                     tankPermitionEnergy.append([tankRef, qdict["DevicePermition"] == 'on'])
             tackmanagerLock.release()

@@ -9,7 +9,7 @@ import json
 from pickle import NONE
 from threading import Thread, Lock
 import copy
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import sleep
 
 # request HTTP
@@ -223,7 +223,7 @@ def runTreadTank():
                                 minumWorkingTime = currentMinWorkTime
 
                     # send using http request permition to turn on to energy manager
-                    argumentEnergy = "?ExtentionName=tankmanager&LinkConn=tanksendpermition&DeviceRef="+ localTankThread[u"TankRef"][i] +"&MinWorkingTime="+ str(minumWorkingTime) +"&EnergyPower="+ str(totalPower)
+                    argumentEnergy = "?ExtentionName=tankmanager&LinkConn=tanksendpermition&DeviceRef="+ localTankThread[u"TankRef"][i] +"&MinWorkingTime="+ str(minumWorkingTime) +"&PowerDevice="+ str(totalPower)
                     argumentEnergy = argumentEnergy + "&ExpectedWorkingTime=0.25&AvoidIrrigationProgram=yes&HoursCanWait=0&Priority=1"
 
                     sendLocalHTTPRequest("energy-manager-ask-consuption", argumentEnergy)
@@ -260,7 +260,7 @@ def runTreadTank():
                                 sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=on")
 
                             # inform energy manger using energy with permition
-                            argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&EnergyPower="+ str(totalPower) +"&TurnOffMinDateTime="+ datetime.now().strftime("%Y/%m/%d %H:%M:%S") +"&UrlStop=tanksendpermition"
+                            argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&PowerDevice="+ str(totalPower) +"&TurnOffMinDateTime="+ (datetime.now() + timedelta(hours=0.25)).strftime("%Y/%m/%d %H:%M:%S") +"&UrlStop=tanksendpermition&NewState=on"
                             sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
 
                         tankActivityStatus[i] = True
@@ -269,6 +269,7 @@ def runTreadTank():
                         listOfTankNonPriorityWorking.append(i)
                 elif tankActivityStatus[i]: # if already puping wather, check if permition to continue
                     tankCanStop = False
+                    id2Delete = -1
 
                     # if energy manager is active, check when permion was given
                     tackmanagerLock.acquire()
@@ -281,7 +282,8 @@ def runTreadTank():
                     tackmanagerLock.release()
 
                     if tankCanStop:
-                        # manual start all pumps, if plug-in exits
+                        # manual stop all pumps, if plug-in exits
+                        # TODO: check if plug-in exits
                         for pumpId in localTankThread[u"PumpNeedOn"][i]:
                             sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=off")
                             sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
@@ -296,7 +298,14 @@ def runTreadTank():
                         tankActivityStatus[i] = False
 
                         # inform energy manager, stop to using energy for this tank
-                        # TODO
+                        listOfPumps = getListOfPupms()
+                        totalPower = 0.0
+                        for k in localTankThread[u"PumpNeedOn"][i]:
+                            if k >= 0 and k < len(listOfPumps['PumpPower']):
+                                totalPower = totalPower + float(listOfPumps['PumpPower'][k])
+
+                        argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&PowerDevice="+ str(totalPower) +"&TurnOffMinDateTime="+ datetime.now().strftime("%Y/%m/%d %H:%M:%S") +"&UrlStop=tanksendpermition&NewState=off"
+                        sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
 
                         listOfTankNonPriorityWorking.remove(i)
             if localTankStatus[i][2] != None and not localTankStatus[i][2] and i not in listOfTanksSOS and not tankActivityStatus[i]: # SOS is not fill
@@ -329,7 +338,7 @@ def runTreadTank():
                     if k >= 0 and k < len(listOfPumps['PumpPower']):
                         totalPower = totalPower + float(listOfPumps['PumpPower'][k])
 
-                argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&EnergyPower="+ str(totalPower) +"&MandatoryWork&TurnOffMinDateTime=0&UrlStop=tanksendpermition"
+                argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&PowerDevice="+ str(totalPower) +"&MandatoryWork&TurnOffMinDateTime="+ datetime.now().strftime("%Y/%m/%d %H:%M:%S") +"&UrlStop=tanksendpermition"
                 sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
 
                 tankActivityStatus[i] = True
@@ -354,6 +363,16 @@ def runTreadTank():
                         sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=off")
                         sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
 
+                    # remove kwon consuption from energy-manager
+                    listOfPumps = getListOfPupms()
+                    totalPower = 0.0
+                    for k in localTankThread[u"PumpNeedOn"][i]:
+                        if k >= 0 and k < len(listOfPumps['PumpPower']):
+                            totalPower = totalPower + float(listOfPumps['PumpPower'][k])
+
+                    argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&PowerDevice="+ str(totalPower) +"&TurnOffMinDateTime="+ datetime.now().strftime("%Y/%m/%d %H:%M:%S") +"&UrlStop=tanksendpermition&NewState=off"
+                    sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
+
                     tankActivityStatus[i] = False
 
                     # close all valves
@@ -371,6 +390,16 @@ def runTreadTank():
                     sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=off")
                     sendLocalHTTPRequest("advance-pump-switch-manual", "?PumpId="+ str(pumpId) + "&ChangeStateState=auto")
 
+                # remove kwon consuption from energy-manager
+                listOfPumps = getListOfPupms()
+                totalPower = 0.0
+                for k in localTankThread[u"PumpNeedOn"][i]:
+                    if k >= 0 and k < len(listOfPumps['PumpPower']):
+                        totalPower = totalPower + float(listOfPumps['PumpPower'][k])
+
+                argumentEnergy = "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&PowerDevice="+ str(totalPower) +"&TurnOffMinDateTime="+ datetime.now().strftime("%Y/%m/%d %H:%M:%S") +"&UrlStop=tanksendpermition&NewState=off"
+                sendLocalHTTPRequest("energy-manager-add-know-consuption", argumentEnergy)
+
                 # disable all valves to off
                 for valveId in range(len(gv.srvals)):
                     sendLocalHTTPRequest("sn", "?sid="+ str(valveId + 1) + "&set_to=0")
@@ -379,8 +408,6 @@ def runTreadTank():
                 sendLocalHTTPRequest("cv", "?pw=opendoor&mm=0")
 
                 tankActivityStatus[i] = False
-
-                # save finish know energy to DB
 
                 # inform energy manager that don´t need energy any more
                 sendLocalHTTPRequest("energy-manager-ask-consuption", "?ExtentionName=tankmanager&DeviceRef="+ localTankThread[u"TankRef"][i] +"&RemovePermition")
